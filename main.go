@@ -35,6 +35,8 @@ func getCurDir() string {
 }
 
 var urlTemplate template.Template = *template.Must(template.ParseFiles(getCurDir() + "/domain.html"))
+var indexTemplate template.Template = *template.Must(template.ParseFiles(getCurDir() + "/index.html"))
+var domainsFile string = getCurDir() + "/tlds.txt"
 
 type UrlData struct {
 	Link string
@@ -69,7 +71,7 @@ func ask(siteName string, cache *ristretto.Cache) (chan Result, int) {
 	if len(siteName) == 0 {
 		return nil, 0
 	}
-	content, err := os.ReadFile(getCurDir() + "/tlds.txt")
+	content, err := os.ReadFile(domainsFile)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -102,9 +104,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.Println("upgraded")
-
-		handling := ""
 
 		for {
 			mt, c, err := conn.ReadMessage()
@@ -119,11 +118,10 @@ func main() {
 				return
 			}
 			siteName := data.(map[string]interface{})["site-name"].(string)
-			if handling == siteName {
-				continue
-			}
-			handling = siteName
-			receiver, amount := ask(handling, cache)
+			receiver, amount := ask(siteName, cache)
+			conn.WriteMessage(mt, []byte("<ul id='domains'></ul>"))
+			conn.WriteMessage(mt, []byte("<input name='site-name' id='site-name' value='"+siteName+"' disabled></input>"))
+			conn.WriteMessage(mt, []byte("<button type='submit' id='submit' disabled>Submit</button>"))
 			for amount > 0 {
 				res := <-receiver
 				if res.valid {
@@ -134,15 +132,16 @@ func main() {
 				}
 				amount--
 			}
+			conn.WriteMessage(mt, []byte("<input name='site-name' id='site-name' value='"+siteName+"'></input>"))
+			conn.WriteMessage(mt, []byte("<button type='submit' id='submit'>Submit</button>"))
 		}
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles(getCurDir() + "/index.html")
 		if err != nil {
 			log.Fatal(err)
 		}
-		tmpl.Execute(w, nil)
+		indexTemplate.Execute(w, nil)
 	})
 
 	log.Fatal(http.ListenAndServe(":8100", nil))

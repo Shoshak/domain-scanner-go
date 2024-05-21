@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
@@ -23,7 +24,16 @@ type Result struct {
 	valid bool
 }
 
-var urlTemplate template.Template = *template.Must(template.ParseFiles("domain.html"))
+func getCurDir() string {
+	ex, err := os.Executable()
+	if err != nil {
+		log.Fatal(err)
+	}
+	exPath := filepath.Dir(ex)
+	return exPath
+}
+
+var urlTemplate template.Template = *template.Must(template.ParseFiles(getCurDir() + "/domain.html"))
 
 type UrlData struct {
 	Link string
@@ -46,7 +56,7 @@ func isValidUrl(url string, client *http.Client, receiver chan Result) {
 }
 
 func ask(siteName string) (chan Result, int) {
-	content, err := os.ReadFile("tlds.txt")
+	content, err := os.ReadFile(getCurDir() + "/tlds.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -99,7 +109,7 @@ func main() {
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		tmpl, err := template.ParseFiles("index.html")
+		tmpl, err := template.ParseFiles(getCurDir() + "/index.html")
 		if err != nil {
 			log.Fatal(err)
 		}

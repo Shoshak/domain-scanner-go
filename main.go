@@ -108,7 +108,6 @@ func main() {
 				}
 				amount--
 			}
-			log.Println("handled")
 		}
 	})
 

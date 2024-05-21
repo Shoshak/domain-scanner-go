@@ -56,6 +56,9 @@ func isValidUrl(url string, client *http.Client, receiver chan Result) {
 }
 
 func ask(siteName string) (chan Result, int) {
+	if len(siteName) == 0 {
+		return nil, 0
+	}
 	content, err := os.ReadFile(getCurDir() + "/tlds.txt")
 	if err != nil {
 		log.Fatal(err)
@@ -105,6 +108,7 @@ func main() {
 				}
 				amount--
 			}
+			log.Println("handled")
 		}
 	})
 

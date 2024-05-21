@@ -10,14 +10,23 @@
 <body>
     <div hx-ext="ws" ws-connect="/ask">
         <form id="form" ws-send>
-            <input name="site-name">
+            <input name="site-name" id="site-name">
             <button type="submit">Submit</button>
         </form>
         <ul id="domains"></ul>
     </div>
     <script>
+        let changed = false
+        document.getElementById("site-name").addEventListener("input", (e) => {
+            changed = true
+        })
         document.getElementById("form").addEventListener("submit", (e) => {
+            if (!changed) {
+                e.preventDefault()
+                return
+            }
             document.getElementById("domains").innerHTML = ""
+            changed = false
         })
     </script>
 </body>

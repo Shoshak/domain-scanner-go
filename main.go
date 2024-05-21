@@ -11,6 +11,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/dgraph-io/ristretto"
 	"github.com/gorilla/websocket"
 )
 
@@ -39,23 +40,32 @@ type UrlData struct {
 	Link string
 }
 
-func isValidUrl(url string, client *http.Client, receiver chan Result) {
+func isValidUrl(url string, client *http.Client, receiver chan Result, cache *ristretto.Cache) {
 	data := UrlData{Link: url}
 	buf := &bytes.Buffer{}
 	if err := urlTemplate.Execute(buf, data); err != nil {
 		log.Fatal("Could not read template")
 	}
 
+	cachedValue, found := cache.Get(url)
+	if found {
+		receiver <- Result{url: buf.String(), valid: cachedValue.(bool)}
+		return
+	}
+
 	resp, err := client.Head(url)
 	if err != nil {
 		receiver <- Result{url: buf.String(), valid: false}
+		cache.Set(url, false, 1)
 		return
 	}
 	statusCode := resp.StatusCode
-	receiver <- Result{url: buf.String(), valid: statusCode >= 200 && statusCode <= 399}
+	isValidStatusCode := statusCode >= 200 && statusCode <= 399
+	receiver <- Result{url: buf.String(), valid: isValidStatusCode}
+	cache.Set(url, isValidStatusCode, 1)
 }
 
-func ask(siteName string) (chan Result, int) {
+func ask(siteName string, cache *ristretto.Cache) (chan Result, int) {
 	if len(siteName) == 0 {
 		return nil, 0
 	}
@@ -70,7 +80,7 @@ func ask(siteName string) (chan Result, int) {
 	client := http.Client{Timeout: time.Second * 5}
 	for _, domain := range domains {
 		url := "http://" + siteName + "." + strings.TrimSpace(domain)
-		go isValidUrl(url, &client, scanReceiver)
+		go isValidUrl(url, &client, scanReceiver, cache)
 		scanAmount++
 	}
 
@@ -78,11 +88,23 @@ func ask(siteName string) (chan Result, int) {
 }
 
 func main() {
+	cache, err := ristretto.NewCache(&ristretto.Config{
+		NumCounters: 1e7,     // number of keys to track frequency of (10M).
+		MaxCost:     1 << 30, // maximum cost of cache (1GB).
+		BufferItems: 64,      // number of keys per Get buffer.
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	http.HandleFunc("/ask", func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
+		log.Println("upgraded")
+
+		handling := ""
 
 		for {
 			mt, c, err := conn.ReadMessage()
@@ -97,7 +119,11 @@ func main() {
 				return
 			}
 			siteName := data.(map[string]interface{})["site-name"].(string)
-			receiver, amount := ask(siteName)
+			if handling == siteName {
+				continue
+			}
+			handling = siteName
+			receiver, amount := ask(handling, cache)
 			for amount > 0 {
 				res := <-receiver
 				if res.valid {
